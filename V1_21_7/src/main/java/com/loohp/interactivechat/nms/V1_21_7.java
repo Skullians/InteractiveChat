@@ -60,10 +60,7 @@ import net.minecraft.core.component.DataComponentPatch;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.nbt.MojangsonParser;
-import net.minecraft.nbt.NBTBase;
-import net.minecraft.nbt.NBTCompressedStreamTools;
-import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.nbt.*;
 import net.minecraft.network.chat.ChatDecorator;
 import net.minecraft.network.chat.IChatBaseComponent;
 import net.minecraft.network.chat.PlayerChatMessage;
@@ -88,6 +85,7 @@ import net.minecraft.server.level.EntityPlayer;
 import net.minecraft.server.level.ParticleStatus;
 import net.minecraft.server.level.WorldServer;
 import net.minecraft.server.network.PlayerConnection;
+import net.minecraft.util.ProblemReporter;
 import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.EnumItemSlot;
 import net.minecraft.world.entity.player.EnumChatVisibility;
@@ -99,20 +97,22 @@ import net.minecraft.world.level.saveddata.maps.MapDecorationType;
 import net.minecraft.world.level.saveddata.maps.MapIcon;
 import net.minecraft.world.level.saveddata.maps.MapId;
 import net.minecraft.world.level.saveddata.maps.WorldMap;
+import net.minecraft.world.level.storage.TagValueInput;
+import net.minecraft.world.level.storage.TagValueOutput;
 import net.querz.nbt.io.NBTDeserializer;
 import net.querz.nbt.io.NamedTag;
 import org.bukkit.Bukkit;
 import org.bukkit.NamespacedKey;
 import org.bukkit.OfflinePlayer;
-import org.bukkit.craftbukkit.v1_21_R4.CraftServer;
-import org.bukkit.craftbukkit.v1_21_R4.CraftWorld;
-import org.bukkit.craftbukkit.v1_21_R4.boss.CraftBossBar;
-import org.bukkit.craftbukkit.v1_21_R4.entity.CraftPlayer;
-import org.bukkit.craftbukkit.v1_21_R4.inventory.CraftItemStack;
-import org.bukkit.craftbukkit.v1_21_R4.map.CraftMapCursor;
-import org.bukkit.craftbukkit.v1_21_R4.map.CraftMapView;
-import org.bukkit.craftbukkit.v1_21_R4.map.RenderData;
-import org.bukkit.craftbukkit.v1_21_R4.util.CraftChatMessage;
+import org.bukkit.craftbukkit.v1_21_R5.CraftServer;
+import org.bukkit.craftbukkit.v1_21_R5.CraftWorld;
+import org.bukkit.craftbukkit.v1_21_R5.boss.CraftBossBar;
+import org.bukkit.craftbukkit.v1_21_R5.entity.CraftPlayer;
+import org.bukkit.craftbukkit.v1_21_R5.inventory.CraftItemStack;
+import org.bukkit.craftbukkit.v1_21_R5.map.CraftMapCursor;
+import org.bukkit.craftbukkit.v1_21_R5.map.CraftMapView;
+import org.bukkit.craftbukkit.v1_21_R5.map.RenderData;
+import org.bukkit.craftbukkit.v1_21_R5.util.CraftChatMessage;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
@@ -143,18 +143,19 @@ import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 @SuppressWarnings("unused")
-public class V1_21_5 extends NMSWrapper {
+public class V1_21_7 extends NMSWrapper {
 
     private final Method craftMapViewIsContextualMethod;
     private final Method playerConnectionDetectRateSpamMethod;
     private final Method playerConnectionIsChatMessageIllegalMethod;
     private final Method playerConnectionHandleCommandMethod;
     private final Field craftSkullMetaProfileField;
+    private final Field tagValueOutputCompoundField;
 
     //paper
     private Method paperChatDecoratorDecorateMethod;
 
-    public V1_21_5() {
+    public V1_21_7() {
         try {
             craftMapViewIsContextualMethod = CraftMapView.class.getDeclaredMethod("isContextual");
             //noinspection JavaReflectionMemberAccess
@@ -162,6 +163,7 @@ public class V1_21_5 extends NMSWrapper {
             playerConnectionIsChatMessageIllegalMethod = ReflectionUtils.findDeclaredMethod(PlayerConnection.class, new Class<?>[] {String.class}, "isChatMessageIllegal", "d");
             playerConnectionHandleCommandMethod = PlayerConnection.class.getDeclaredMethod("handleCommand", String.class);
             craftSkullMetaProfileField = Class.forName("org.bukkit.craftbukkit.v1_21_R4.inventory.CraftMetaSkull").getDeclaredField("profile");
+            tagValueOutputCompoundField = TagValueOutput.class.getDeclaredField("compound");
         } catch (NoSuchFieldException | NoSuchMethodException | ClassNotFoundException e) {
             throw new RuntimeException(e);
         }
@@ -347,9 +349,12 @@ public class V1_21_5 extends NMSWrapper {
     @Override
     public ItemStack getItemFromNBTJson(String json) {
         try {
-            IRegistryCustom registryAccess = ((CraftWorld) Bukkit.getWorlds().get(0)).getHandle().J_();
+            IRegistryCustom registryAccess = ((CraftWorld) Bukkit.getWorlds().get(0)).getHandle().K_();
             NBTTagCompound nbtTagCompound = MojangsonParser.a(json);
-            net.minecraft.world.item.ItemStack itemStack = net.minecraft.world.item.ItemStack.a(registryAccess, nbtTagCompound).orElseThrow(() -> new RuntimeException());
+            net.minecraft.world.item.ItemStack itemStack = net.minecraft.world.item.ItemStack.b
+                    .decode(DynamicOpsNBT.a, nbtTagCompound).result()
+                    .orElseThrow(() -> new RuntimeException())
+                    .getFirst();
             return toBukkitCopy(itemStack);
         } catch (CommandSyntaxException e) {
             throw new RuntimeException(e);
@@ -361,10 +366,12 @@ public class V1_21_5 extends NMSWrapper {
         if (itemStack.getType().isAir()) {
             return "{id: \"minecraft:air\", count: 1}";
         }
-        IRegistryCustom registryAccess = ((CraftWorld) Bukkit.getWorlds().get(0)).getHandle().J_();
+        IRegistryCustom registryAccess = ((CraftWorld) Bukkit.getWorlds().get(0)).getHandle().K_();
         NBTTagCompound nbtTagCompound = new NBTTagCompound();
         net.minecraft.world.item.ItemStack nmsItemStack = toNMSCopy(itemStack);
-        NBTBase nbt = nmsItemStack.b(registryAccess, nbtTagCompound);
+        NBTBase nbt = net.minecraft.world.item.ItemStack.b
+                .encodeStart(DynamicOpsNBT.a, nmsItemStack)
+                .getOrThrow();
         return nbt.toString();
     }
 
@@ -374,7 +381,7 @@ public class V1_21_5 extends NMSWrapper {
         if (itemStack.getType().isAir()) {
             return Collections.emptyMap();
         }
-        IRegistryCustom registryAccess = ((CraftWorld) Bukkit.getWorlds().get(0)).getHandle().J_();
+        IRegistryCustom registryAccess = ((CraftWorld) Bukkit.getWorlds().get(0)).getHandle().K_();
         net.minecraft.world.item.ItemStack nmsItemStack = toNMSCopy(itemStack);
         DataComponentPatch dataComponentPatch = nmsItemStack.d();
         Map<Key, DataComponentValue> convertedComponents = new HashMap<>();
@@ -405,7 +412,7 @@ public class V1_21_5 extends NMSWrapper {
             return itemStack;
         }
         try {
-            IRegistryCustom registryAccess = ((CraftWorld) Bukkit.getWorlds().get(0)).getHandle().J_();
+            IRegistryCustom registryAccess = ((CraftWorld) Bukkit.getWorlds().get(0)).getHandle().K_();
             net.minecraft.world.item.ItemStack nmsItemStack = toNMSCopy(itemStack);
             DataComponentPatch.a builder = DataComponentPatch.a();
             for (Map.Entry<Key, DataComponentValue> entry : dataComponents.entrySet()) {
@@ -447,10 +454,11 @@ public class V1_21_5 extends NMSWrapper {
         if (itemStack.getType().isAir()) {
             return null;
         }
-        IRegistryCustom registryAccess = ((CraftWorld) Bukkit.getWorlds().get(0)).getHandle().J_();
-        NBTTagCompound nbtTagCompound = new NBTTagCompound();
+        IRegistryCustom registryAccess = ((CraftWorld) Bukkit.getWorlds().get(0)).getHandle().K_();
         net.minecraft.world.item.ItemStack nmsItemStack = toNMSCopy(itemStack);
-        NBTBase nbt = nmsItemStack.b(registryAccess, nbtTagCompound);
+        NBTBase nbt = net.minecraft.world.item.ItemStack.b
+                .encodeStart(DynamicOpsNBT.a, nmsItemStack)
+                .getOrThrow();
         if (nbt instanceof NBTTagCompound) {
             NBTBase tag = ((NBTTagCompound) nbt).p("tag");
             return tag == null ? null : tag.toString();
@@ -474,7 +482,7 @@ public class V1_21_5 extends NMSWrapper {
     public void modernChatSigningDetectRateSpam(Player player, String message) {
         try {
             playerConnectionDetectRateSpamMethod.setAccessible(true);
-            PlayerConnection connection = ((CraftPlayer) player).getHandle().f;
+            PlayerConnection connection = ((CraftPlayer) player).getHandle().g;
             playerConnectionDetectRateSpamMethod.invoke(connection, message);
         } catch (IllegalAccessException | InvocationTargetException e) {
             throw new RuntimeException(e);
@@ -574,14 +582,14 @@ public class V1_21_5 extends NMSWrapper {
         if (unsignedContentOrResult != null) {
             playerChatMessage = modernChatSigningWithUnsignedContent(playerChatMessage, unsignedContentOrResult);
         }
-        ((CraftPlayer) player).getHandle().f.chat(message, playerChatMessage, true);
+        ((CraftPlayer) player).getHandle().g.chat(message, playerChatMessage, true);
     }
 
     @Override
     public void dispatchCommandAsPlayer(Player player, String command) {
         try {
             playerConnectionHandleCommandMethod.setAccessible(true);
-            PlayerConnection connection = ((CraftPlayer) player).getHandle().f;
+            PlayerConnection connection = ((CraftPlayer) player).getHandle().g;
             playerConnectionHandleCommandMethod.invoke(connection, command.trim());
         } catch (IllegalAccessException | InvocationTargetException e) {
             throw new RuntimeException(e);
@@ -596,7 +604,7 @@ public class V1_21_5 extends NMSWrapper {
     @Override
     public boolean canChatColor(Player player) {
         EntityPlayer entityPlayer = ((CraftPlayer) player).getHandle();
-        return entityPlayer.C();
+        return entityPlayer.D();
     }
 
     @Override
@@ -651,7 +659,7 @@ public class V1_21_5 extends NMSWrapper {
 
         List<AdvancementHolder> advancements = Collections.singletonList(new AdvancementHolder(minecraftKey, advancement));
 
-        PlayerConnection connection = ((CraftPlayer) pinged).getHandle().f;
+        PlayerConnection connection = ((CraftPlayer) pinged).getHandle().g;
 
         PacketPlayOutAdvancements packet1 = new PacketPlayOutAdvancements(false, advancements, Collections.emptySet(), advancementProgresses, true);
         connection.sendPacket(packet1);
@@ -669,7 +677,7 @@ public class V1_21_5 extends NMSWrapper {
 
     @Override
     public void sendTitle(Player player, Component title, Component subtitle, Component actionbar, int fadeIn, int stay, int fadeOut) {
-        PlayerConnection connection = ((CraftPlayer) player).getHandle().f;
+        PlayerConnection connection = ((CraftPlayer) player).getHandle().g;
 
         ClientboundClearTitlesPacket packet1 = new ClientboundClearTitlesPacket(true);
         connection.sendPacket(packet1);
@@ -728,7 +736,7 @@ public class V1_21_5 extends NMSWrapper {
         PacketPlayOutWindowItems packet1 = new PacketPlayOutWindowItems(0, 0, itemList, toNMSCopy(ITEM_STACK_AIR));
         PacketPlayOutSetSlot packet2 = new PacketPlayOutSetSlot(-1, -1, 0, toNMSCopy(ITEM_STACK_AIR));
 
-        PlayerConnection connection = ((CraftPlayer) player).getHandle().f;
+        PlayerConnection connection = ((CraftPlayer) player).getHandle().g;
         connection.sendPacket(packet1);
         connection.sendPacket(packet2);
     }
@@ -737,7 +745,7 @@ public class V1_21_5 extends NMSWrapper {
     public void sendFakeMainHandSlot(Player player, ItemStack item) {
         List<Pair<EnumItemSlot, net.minecraft.world.item.ItemStack>> nmsEquipments = Collections.singletonList(new Pair<>(EnumItemSlot.a, toNMSCopy(item)));
         PacketPlayOutEntityEquipment packet = new PacketPlayOutEntityEquipment(player.getEntityId(), nmsEquipments);
-        ((CraftPlayer) player).getHandle().f.sendPacket(packet);
+        ((CraftPlayer) player).getHandle().g.sendPacket(packet);
     }
 
     @Override
@@ -745,7 +753,7 @@ public class V1_21_5 extends NMSWrapper {
         List<MapIcon> mapIcons = toNMSMapIconList(mapCursors);
         WorldMap.c c = new WorldMap.c(0, 0, 128, 128, colors);
         PacketPlayOutMap packet = new PacketPlayOutMap(new MapId(mapId), (byte) 0, false, Optional.of(mapIcons), Optional.of(c));
-        ((CraftPlayer) player).getHandle().f.sendPacket(packet);
+        ((CraftPlayer) player).getHandle().g.sendPacket(packet);
     }
 
     @Override
@@ -757,16 +765,27 @@ public class V1_21_5 extends NMSWrapper {
         }
         OfflinePlayer offline = Bukkit.getOfflinePlayer(uuid);
         GameProfile profile = new GameProfile(offline.getUniqueId(), offline.getName() != null ? offline.getName() : offline.getUniqueId().toString());
-        ClientInformation dummyInfo = new ClientInformation("en_us", 1, EnumChatVisibility.c, false, 0, EntityPlayer.bu, true, false, ParticleStatus.c);
+        ClientInformation dummyInfo = new ClientInformation("en_us", 1, EnumChatVisibility.c, false, 0, EntityPlayer.bQ, true, false, ParticleStatus.c);
         EntityPlayer player = new EntityPlayer(server, worldServer, profile, dummyInfo);
-        player.R().a();
+        player.S().a();
 
-        NBTTagCompound loadedData = player.g.ag().t.b(player).orElse(null);
-        if (loadedData == null) {
+        TagValueInput input = ((TagValueInput) player.cW.ag().t.a(player, ProblemReporter.a).orElse(null));
+        NBTTagCompound loadedData;
+        if (input == null) {
             return null;
+        } else {
+            loadedData = input.c;
         }
 
-        player.g(loadedData);
+        TagValueOutput output = TagValueOutput.a(ProblemReporter.a, player.eb());
+        try {
+            tagValueOutputCompoundField.setAccessible(true);
+            tagValueOutputCompoundField.set(output, loadedData);
+        } catch (IllegalAccessException exception) {
+            throw new RuntimeException(exception);
+        }
+
+        player.d(output);
         player.a(loadedData);
         player.c(loadedData);
 
